@@ -71,4 +71,5 @@ python -m ruff check .
 python -m pytest
 memory-quality-gate score --file candidate.txt --existing-file existing_memory.md --format json
 python -m build
+python -m twine check dist/*
 ```

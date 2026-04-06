@@ -86,7 +86,14 @@ print(result.passed, round(result.weighted_score, 3), result.scores)
 . .venv/bin/activate
 python -m ruff check .
 python -m pytest
+python -m build
+python -m twine check dist/*
 ```
+
+## Releases
+
+- Push a `vX.Y.Z` tag to build the wheel and source distribution, verify metadata, and attach the artifacts to a GitHub Release.
+- Use the manual `Publish PyPI` GitHub Actions workflow after configuring `GreyforgeLabs/memory-quality-gate` as a trusted publisher on PyPI.
 
 ## License
 

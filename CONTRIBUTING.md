@@ -36,6 +36,14 @@ chore: update dependencies
 3. Keep PRs focused; one logical scoring or tooling change per PR.
 4. Explain any heuristic change with a before/after example.
 
+## Release Process
+
+1. Update `pyproject.toml` and `CHANGELOG.md` for the intended version.
+2. Run `. .venv/bin/activate && python -m ruff check . && python -m pytest && python -m build && python -m twine check dist/*`.
+3. Create and push a `vX.Y.Z` tag that matches `project.version` in `pyproject.toml`.
+4. Let the `Release` workflow publish GitHub release artifacts automatically.
+5. Run the manual `Publish PyPI` workflow after PyPI trusted publishing is configured for this repo.
+
 ## Code Standards
 
 - Preserve the zero-dependency runtime.

@@ -13,4 +13,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - CLI commands for scoring and pass/fail checks
 - Novelty checks against an optional existing memory corpus
 - Pytest suite, Ruff config, and GitHub Actions CI
+- Tagged release workflow with GitHub release artifacts and manual PyPI publish workflow
 - Real README, STARTHERE bootstrap, and scoring model documentation
