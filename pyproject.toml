@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools==68.1.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "memory-quality-gate"
+version = "0.1.0"
+description = "Zero-LLM heuristic scoring for filtering memory candidates before they reach long-term storage."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "AGPL-3.0-only" }
+authors = [
+  { name = "Greyforge", email = "admin@greyforgelabs.com" },
+]
+keywords = ["memory", "rag", "agents", "heuristics", "cli", "quality"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: GNU Affero General Public License v3",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Topic :: Text Processing :: Linguistic",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "build==1.4.2",
+  "pytest==9.0.2",
+  "ruff==0.15.0",
+]
+
+[project.scripts]
+memory-quality-gate = "memory_quality_gate.cli:main"
+
+[project.urls]
+Homepage = "https://greyforge.tech"
+Repository = "https://github.com/GreyforgeLabs/memory-quality-gate"
+Issues = "https://github.com/GreyforgeLabs/memory-quality-gate/issues"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "UP"]

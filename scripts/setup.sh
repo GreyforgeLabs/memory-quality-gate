@@ -16,27 +16,32 @@ check_command() {
     fi
 }
 
-# Uncomment and modify as needed:
-# check_command python3
-# check_command node
-# check_command cargo
+check_command python3
 
-# Install dependencies
-# Uncomment the relevant section:
+PYTHON_VERSION="$(python3 - <<'PY'
+import sys
+print(f"{sys.version_info.major}.{sys.version_info.minor}")
+PY
+)"
 
-# Python:
-# cd "$PROJECT_DIR"
-# python3 -m venv .venv
-# source .venv/bin/activate
-# pip install -r requirements.txt
+case "$PYTHON_VERSION" in
+    3.11|3.12) ;;
+    *)
+        echo "ERROR: Python 3.11 or 3.12 is required. Found $PYTHON_VERSION."
+        exit 1
+        ;;
+esac
 
-# Node.js:
-# cd "$PROJECT_DIR"
-# npm install
+cd "$PROJECT_DIR"
 
-# Rust:
-# cd "$PROJECT_DIR"
-# cargo build
+if [ ! -d ".venv" ]; then
+    python3 -m venv .venv
+fi
+
+# shellcheck disable=SC1091
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e ".[dev]"
 
 # Setup environment
 if [ ! -f "$PROJECT_DIR/.env" ] && [ -f "$PROJECT_DIR/.env.example" ]; then
@@ -46,9 +51,6 @@ fi
 
 echo "=== Setup complete ==="
 
-# Verification
-# Uncomment and modify:
-# echo "Running verification..."
-# python3 -c "import memory-quality-gate; print('OK')"
-# npm test
-# cargo test
+echo "Running verification..."
+memory-quality-gate check \
+    --text "Always run ./scripts/deploy.sh --dry-run before shipping v2.4.1 because it prevents partial deploys."

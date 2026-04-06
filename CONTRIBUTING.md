@@ -1,20 +1,22 @@
 # Contributing to memory-quality-gate
 
-Thanks for your interest in contributing. This guide covers the process for submitting changes.
+This project is intentionally small: one scoring engine, one CLI, one test suite. Keep changes focused and keep the heuristics explainable.
 
 ## Getting Started
 
-1. Fork the repository
+1. Fork the repository.
 2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/memory-quality-gate.git`
-3. Run setup: `cd memory-quality-gate && ./scripts/setup.sh`
-4. Create a branch: `git checkout -b your-feature`
+3. Enter the repo and run setup: `cd memory-quality-gate && ./scripts/setup.sh`
+4. Activate the environment: `. .venv/bin/activate`
+5. Create a branch: `git checkout -b your-feature`
 
 ## Development Workflow
 
-1. Make your changes
-2. Run tests to verify nothing is broken
-3. Commit with clear, descriptive messages (prefer `feat:`, `fix:`, `docs:` prefixes)
-4. Push to your fork and open a Pull Request
+1. Make your changes.
+2. Run `python -m ruff check .` and `python -m pytest`.
+3. Update docs when the scoring contract or CLI changes.
+4. Commit with clear, descriptive messages.
+5. Push to your fork and open a Pull Request.
 
 ## Commit Messages
 
@@ -29,21 +31,22 @@ chore: update dependencies
 
 ## Pull Request Process
 
-1. Fill out the PR template
-2. Ensure CI passes
-3. One maintainer approval is required for merge
-4. Keep PRs focused — one logical change per PR
+1. Fill out the PR template.
+2. Ensure CI passes.
+3. Keep PRs focused; one logical scoring or tooling change per PR.
+4. Explain any heuristic change with a before/after example.
 
 ## Code Standards
 
-- Follow the existing code style in the repository
-- Write tests for new functionality
-- Update documentation for user-facing changes
-- No secrets, credentials, or internal paths in your code
+- Preserve the zero-dependency runtime.
+- Keep heuristics deterministic and cheap.
+- Write tests for any scoring or CLI behavior change.
+- No secrets, credentials, or internal paths in code, docs, or examples.
+- Favor explicit thresholds and documented tradeoffs over opaque magic.
 
 ## Reporting Issues
 
-Use the GitHub issue templates. For bugs, include steps to reproduce. For features, describe the problem you're solving.
+Use the GitHub issue templates. For bugs, include the candidate text, expected behavior, actual result, and whether `existing_content` was involved.
 
 ## License
 

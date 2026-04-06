@@ -17,6 +17,12 @@ Instead, use one of these methods:
 1. **GitHub Security Advisories** (preferred): Use the "Report a vulnerability" button on the Security tab of this repository.
 2. **Email**: Contact the maintainers through [greyforge.tech](https://greyforge.tech).
 
+## Security Notes
+
+- `memory-quality-gate` does not execute shell commands or call external services.
+- The CLI only reads local files explicitly passed with `--file` or `--existing-file`.
+- The project is designed to run without runtime dependencies.
+
 ## What to Include
 
 - Description of the vulnerability
