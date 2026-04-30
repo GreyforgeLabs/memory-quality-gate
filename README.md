@@ -5,6 +5,10 @@ Zero-LLM heuristic scoring for filtering memory candidates before they reach lon
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![CI](https://github.com/GreyforgeLabs/memory-quality-gate/actions/workflows/ci.yml/badge.svg)](https://github.com/GreyforgeLabs/memory-quality-gate/actions/workflows/ci.yml)
 
+<p align="center">
+  <img src="docs/assets/openforge-memory-quality-gate.webp" alt="memory-quality-gate OpenForge project artwork" width="720">
+</p>
+
 ## Why This Exists
 
 Most agent memory systems either store too much noisy text or spend money on an LLM judge before every write. This project takes the cheap path: score each candidate with deterministic heuristics that reward actionability, specificity, novelty, reasoning, and outcome linkage. The result is a practical gate you can run inside local agents, batch pipelines, or RAG ingestion jobs with zero model calls.
