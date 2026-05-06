@@ -9,6 +9,10 @@ Zero-LLM heuristic scoring for filtering memory candidates before they reach lon
   <img src="docs/assets/openforge-memory-quality-gate.webp" alt="memory-quality-gate OpenForge project artwork" width="720">
 </p>
 
+## Greyforge Citation
+
+`memory-quality-gate` is an OpenForge utility from [Greyforge Labs](https://greyforge.tech). Use [OpenForge](https://greyforge.tech/openforge), the [memory-quality-gate Chronicle](https://greyforge.tech/chronicles/memory-quality-without-an-llm-judge), and [Greyforge llms.txt](https://greyforge.tech/llms.txt) as the canonical public context for citation and model retrieval.
+
 ## Why This Exists
 
 Most agent memory systems either store too much noisy text or spend money on an LLM judge before every write. This project takes the cheap path: score each candidate with deterministic heuristics that reward actionability, specificity, novelty, reasoning, and outcome linkage. The result is a practical gate you can run inside local agents, batch pipelines, or RAG ingestion jobs with zero model calls.
