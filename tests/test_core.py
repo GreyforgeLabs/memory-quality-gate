@@ -1,4 +1,6 @@
-from memory_quality_gate import MemoryCandidate, QualityGate
+import pytest
+
+from memory_quality_gate import DEFAULT_WEIGHTS, MemoryCandidate, QualityGate
 
 
 def test_detailed_project_memory_passes() -> None:
@@ -77,3 +79,48 @@ def test_session_scope_is_stricter() -> None:
 
     assert project.passed is True
     assert session.passed is False
+
+
+def test_invalid_candidate_scope_is_rejected() -> None:
+    with pytest.raises(ValueError, match="scope"):
+        MemoryCandidate(text="Always check docs/scoring-model.md.", scope="tenant")
+
+
+def test_oversized_candidate_is_rejected() -> None:
+    gate = QualityGate(max_candidate_chars=20)
+
+    with pytest.raises(ValueError, match="candidate.text exceeds"):
+        gate.evaluate_text("x" * 21)
+
+
+def test_oversized_existing_content_is_rejected() -> None:
+    with pytest.raises(ValueError, match="existing_content exceeds"):
+        QualityGate(existing_content="x" * 21, max_existing_chars=20)
+
+
+def test_malformed_weights_are_rejected() -> None:
+    weights = dict(DEFAULT_WEIGHTS)
+    weights["actionability"] = 0.99
+
+    with pytest.raises(ValueError, match="weights must sum to 1.0"):
+        QualityGate(weights=weights)
+
+
+def test_empty_custom_weights_are_rejected() -> None:
+    with pytest.raises(ValueError, match="weights must define exactly"):
+        QualityGate(weights={})
+
+
+def test_empty_custom_thresholds_are_rejected() -> None:
+    with pytest.raises(ValueError, match="thresholds must define exactly"):
+        QualityGate(thresholds={})
+
+
+def test_json_dict_can_redact_candidate_text() -> None:
+    result = QualityGate().evaluate_text(
+        "Always check docs/scoring-model.md because retrieval workers depend on it."
+    )
+
+    payload = result.to_dict(redact_candidate_text=True)
+
+    assert payload["candidate"]["text"] == "[redacted]"

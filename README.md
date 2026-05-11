@@ -61,8 +61,14 @@ memory-quality-gate check \
   --file candidate.txt \
   --existing-file existing_memory.md \
   --scope session \
-  --format json
+  --format json \
+  --redact-text
 ```
+
+The CLI rejects inputs above the default caps of 1,000,000 UTF-8 bytes for
+candidate text and 5,000,000 UTF-8 bytes for `--existing-file`. Local operators
+can override those caps with `--max-input-bytes` and `--max-existing-bytes`.
+Use `--redact-text` for JSON output that may be retained in logs.
 
 Python API:
 

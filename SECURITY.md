@@ -21,6 +21,15 @@ Instead, use one of these methods:
 
 - `memory-quality-gate` does not execute shell commands or call external services.
 - The CLI only reads local files explicitly passed with `--file` or `--existing-file`.
+  Do not expose raw path arguments to untrusted users in web, bot, or CI wrappers.
+- The CLI applies default input caps of 1,000,000 UTF-8 bytes for candidate text
+  and 5,000,000 UTF-8 bytes for `--existing-file`; operators can override them
+  with `--max-input-bytes` and `--max-existing-bytes`.
+- JSON output includes candidate text unless `--redact-text` is used. Treat
+  candidate text as untrusted and potentially sensitive when writing logs.
+- A passing score means "probably useful to remember," not "safe to trust."
+  Downstream memory systems still need authentication, authorization, privacy
+  filtering, prompt-injection defenses, and scope isolation.
 - The project is designed to run without runtime dependencies.
 
 ## What to Include

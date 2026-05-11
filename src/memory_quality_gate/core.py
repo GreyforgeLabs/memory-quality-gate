@@ -4,10 +4,32 @@ from __future__ import annotations
 
 import re
 from dataclasses import asdict, dataclass
+from math import isfinite
 from typing import Literal
 
 Scope = Literal["global", "project", "session"]
 EntryType = Literal["general", "decision", "lesson", "completed", "product_update"]
+
+SCOPES: tuple[Scope, ...] = ("global", "project", "session")
+ENTRY_TYPES: tuple[EntryType, ...] = (
+    "general",
+    "decision",
+    "lesson",
+    "completed",
+    "product_update",
+)
+SCORE_NAMES = (
+    "actionability",
+    "specificity",
+    "novelty",
+    "reasoning",
+    "outcome_linkage",
+)
+
+DEFAULT_MAX_CANDIDATE_CHARS = 1_000_000
+DEFAULT_MAX_EXISTING_CHARS = 5_000_000
+DEFAULT_MAX_EXISTING_SEGMENTS = 20_000
+DEFAULT_MAX_PHRASE_PROBES = 5_000
 
 DEFAULT_WEIGHTS = {
     "actionability": 0.30,
@@ -95,6 +117,17 @@ class MemoryCandidate:
     scope: Scope = "project"
     entry_type: EntryType = "general"
 
+    def __post_init__(self) -> None:
+        """Validate direct API inputs that type hints cannot enforce at runtime."""
+        if not isinstance(self.text, str):
+            raise TypeError("MemoryCandidate.text must be a string")
+        if self.scope not in SCOPES:
+            raise ValueError(f"MemoryCandidate.scope must be one of: {', '.join(SCOPES)}")
+        if self.entry_type not in ENTRY_TYPES:
+            raise ValueError(
+                f"MemoryCandidate.entry_type must be one of: {', '.join(ENTRY_TYPES)}"
+            )
+
 
 @dataclass(slots=True, frozen=True)
 class QualityResult:
@@ -107,10 +140,13 @@ class QualityResult:
     passed: bool
     rejection_reason: str = ""
 
-    def to_dict(self) -> dict[str, object]:
+    def to_dict(self, *, redact_candidate_text: bool = False) -> dict[str, object]:
         """Return a JSON-serializable representation."""
+        candidate = asdict(self.candidate)
+        if redact_candidate_text:
+            candidate["text"] = "[redacted]"
         return {
-            "candidate": asdict(self.candidate),
+            "candidate": candidate,
             "scores": self.scores,
             "weighted_score": round(self.weighted_score, 3),
             "threshold": round(self.threshold, 3),
@@ -127,14 +163,42 @@ class QualityGate:
         existing_content: str = "",
         thresholds: dict[Scope, float] | None = None,
         weights: dict[str, float] | None = None,
+        max_candidate_chars: int | None = DEFAULT_MAX_CANDIDATE_CHARS,
+        max_existing_chars: int | None = DEFAULT_MAX_EXISTING_CHARS,
+        max_existing_segments: int = DEFAULT_MAX_EXISTING_SEGMENTS,
+        max_phrase_probes: int = DEFAULT_MAX_PHRASE_PROBES,
     ) -> None:
+        if not isinstance(existing_content, str):
+            raise TypeError("existing_content must be a string")
+        self.max_candidate_chars = _validate_optional_positive_int(
+            max_candidate_chars, "max_candidate_chars"
+        )
+        self.max_existing_chars = _validate_optional_positive_int(
+            max_existing_chars, "max_existing_chars"
+        )
+        self.max_existing_segments = _validate_positive_int(
+            max_existing_segments, "max_existing_segments"
+        )
+        self.max_phrase_probes = _validate_positive_int(max_phrase_probes, "max_phrase_probes")
+        _validate_text_size(
+            existing_content,
+            "existing_content",
+            self.max_existing_chars,
+        )
+
         self.existing_content = existing_content
-        self.thresholds = thresholds or DEFAULT_SCOPE_THRESHOLDS
-        self.weights = weights or DEFAULT_WEIGHTS
-        self._existing_segments = self._prepare_segments(existing_content)
+        self.thresholds = _validate_thresholds(
+            DEFAULT_SCOPE_THRESHOLDS if thresholds is None else thresholds
+        )
+        self.weights = _validate_weights(DEFAULT_WEIGHTS if weights is None else weights)
+        self._existing_segments = self._prepare_segments(
+            existing_content,
+            self.max_existing_segments,
+        )
 
     def evaluate(self, candidate: MemoryCandidate) -> QualityResult:
         """Score a single candidate."""
+        _validate_text_size(candidate.text, "candidate.text", self.max_candidate_chars)
         text = candidate.text.strip()
         threshold = self.thresholds[candidate.scope]
 
@@ -191,12 +255,14 @@ class QualityGate:
         return [self.evaluate(candidate) for candidate in candidates]
 
     @staticmethod
-    def _prepare_segments(existing_content: str) -> list[set[str]]:
+    def _prepare_segments(existing_content: str, max_segments: int) -> list[set[str]]:
         segments: list[set[str]] = []
-        for raw_segment in re.split(r"(?:\n\s*\n)+|\n", existing_content):
+        for raw_segment in existing_content.splitlines():
             tokens = _normalized_tokens(raw_segment)
             if tokens:
                 segments.append(tokens)
+            if len(segments) >= max_segments:
+                break
         return segments
 
     @staticmethod
@@ -244,7 +310,8 @@ class QualityGate:
     def _has_phrase_overlap(self, text: str) -> bool:
         haystack = self.existing_content.lower()
         words = text.lower().split()
-        for index in range(max(0, len(words) - 4)):
+        phrase_count = min(max(0, len(words) - 4), self.max_phrase_probes)
+        for index in range(phrase_count):
             probe = " ".join(words[index : index + 5]).strip()
             if len(probe) >= 20 and probe in haystack:
                 return True
@@ -288,3 +355,71 @@ def _normalized_tokens(text: str) -> set[str]:
         for token in re.findall(r"[a-z0-9_./:-]+", text.lower())
         if len(token) > 2 and token not in _STOPWORDS
     }
+
+
+def _validate_text_size(text: str, label: str, max_chars: int | None) -> None:
+    if max_chars is not None and len(text) > max_chars:
+        raise ValueError(f"{label} exceeds maximum length of {max_chars} characters")
+
+
+def _validate_optional_positive_int(value: int | None, label: str) -> int | None:
+    if value is None:
+        return None
+    return _validate_positive_int(value, label)
+
+
+def _validate_positive_int(value: int, label: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ValueError(f"{label} must be a positive integer")
+    return value
+
+
+def _validate_thresholds(thresholds: dict[Scope, float]) -> dict[Scope, float]:
+    missing = [scope for scope in SCOPES if scope not in thresholds]
+    extra = sorted(set(thresholds) - set(SCOPES))
+    if missing or extra:
+        detail = []
+        if missing:
+            detail.append(f"missing {', '.join(missing)}")
+        if extra:
+            detail.append(f"unknown {', '.join(extra)}")
+        expected = ", ".join(SCOPES)
+        raise ValueError(f"thresholds must define exactly {expected} ({'; '.join(detail)})")
+
+    validated: dict[Scope, float] = {}
+    for scope in SCOPES:
+        value = thresholds[scope]
+        if not _is_finite_number(value) or not 0.0 <= value <= 1.0:
+            raise ValueError(f"threshold for {scope} must be a finite number between 0 and 1")
+        validated[scope] = float(value)
+    return validated
+
+
+def _validate_weights(weights: dict[str, float]) -> dict[str, float]:
+    missing = [name for name in SCORE_NAMES if name not in weights]
+    extra = sorted(set(weights) - set(SCORE_NAMES))
+    if missing or extra:
+        detail = []
+        if missing:
+            detail.append(f"missing {', '.join(missing)}")
+        if extra:
+            detail.append(f"unknown {', '.join(extra)}")
+        raise ValueError(
+            f"weights must define exactly {', '.join(SCORE_NAMES)} ({'; '.join(detail)})"
+        )
+
+    validated: dict[str, float] = {}
+    for name in SCORE_NAMES:
+        value = weights[name]
+        if not _is_finite_number(value) or value < 0.0:
+            raise ValueError(f"weight for {name} must be a finite non-negative number")
+        validated[name] = float(value)
+
+    total = sum(validated.values())
+    if abs(total - 1.0) > 0.000001:
+        raise ValueError("weights must sum to 1.0")
+    return validated
+
+
+def _is_finite_number(value: object) -> bool:
+    return not isinstance(value, bool) and isinstance(value, int | float) and isfinite(value)
