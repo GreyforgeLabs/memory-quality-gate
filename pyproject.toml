@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "memory-quality-gate"
-version = "0.1.0"
+version = "0.2.0"
 description = "Zero-LLM heuristic scoring for filtering memory candidates before they reach long-term storage."
 readme = "README.md"
 requires-python = ">=3.11"
