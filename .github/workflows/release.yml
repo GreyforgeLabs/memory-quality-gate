@@ -39,7 +39,7 @@ jobs:
       - run: python -m pytest
       - run: python -m build
       - run: python -m twine check dist/*
-      - uses: actions/upload-artifact@v8
+      - uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/*
