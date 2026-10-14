@@ -10,7 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 - Novelty scoring against an existing corpus is about 6x faster per candidate for long-lived gates: an inverted token index and a compact word-trigram filter are built on the second novelty lookup, so one-shot CLI runs never pay for them and results are identical
 - Dimension scoring stops counting regex matches once a score saturates, so very long candidates no longer scan the whole text once per dimension
-- `import memory_quality_gate` no longer imports `typing`, and the CLI no longer imports `pathlib` or (for text output) `json`
+- The CLI no longer imports `pathlib`, or `json` for text output
 - `QualityResult.to_dict()` builds the candidate payload directly instead of using `dataclasses.asdict`
 - Added `scripts/bench.py`, a reproducible benchmark for import time, CLI wall time and throughput on a generated corpus
 
@@ -31,6 +31,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 - CI runs on Python 3.11, 3.12, 3.13 and 3.14; package classifiers list 3.13 and 3.14
 - README example output and the scoring-model document now match actual behaviour
+- `QualityGate` reads `existing_content` once, at construction, for both novelty checks (the token segments already worked this way); build a new gate to score against a different corpus
 
 ## [0.2.0] - 2026-09-06
 

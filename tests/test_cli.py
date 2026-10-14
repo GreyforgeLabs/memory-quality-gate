@@ -139,12 +139,9 @@ def test_cli_rejects_directory_file(tmp_path: Path) -> None:
 
 
 def test_cli_startup_skips_unused_stdlib_modules() -> None:
-    # Compare with the stdlib modules the CLI genuinely needs: some Python versions
-    # import typing from those already, but the package must not add these itself.
-    probe = (
-        "import sys; {}; "
-        "print(sorted(m for m in ('typing', 'json', 'pathlib') if m in sys.modules))"
-    )
+    # Compare with the stdlib modules the CLI genuinely needs; the package must not
+    # add these itself (json is imported only for --format json).
+    probe = "import sys; {}; print(sorted(m for m in ('json', 'pathlib') if m in sys.modules))"
 
     def loaded(statement: str) -> str:
         return subprocess.run(
@@ -156,5 +153,5 @@ def test_cli_startup_skips_unused_stdlib_modules() -> None:
             check=True,
         ).stdout.strip()
 
-    baseline = loaded("import argparse, collections, dataclasses, itertools, math, re")
+    baseline = loaded("import argparse, collections, dataclasses, itertools, math, re, typing")
     assert loaded("import memory_quality_gate.cli") == baseline

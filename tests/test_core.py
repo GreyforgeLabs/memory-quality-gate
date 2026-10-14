@@ -258,3 +258,36 @@ def test_non_string_threshold_keys_raise_value_error() -> None:
 
     with pytest.raises(ValueError, match="unknown 1"):
         QualityGate(thresholds=thresholds)
+
+
+def test_public_dataclass_type_hints_resolve() -> None:
+    # Serializers and validators call get_type_hints() on the public dataclasses;
+    # the Scope/EntryType names must resolve from the module namespace.
+    import typing
+
+    from memory_quality_gate import ENTRY_TYPES, SCOPES
+
+    hints = typing.get_type_hints(MemoryCandidate)
+    assert typing.get_args(hints["scope"]) == SCOPES
+    assert typing.get_args(hints["entry_type"]) == ENTRY_TYPES
+    assert "thresholds" in typing.get_type_hints(QualityGate.__init__)
+
+
+def test_phrase_filter_is_never_seen_half_published() -> None:
+    # A gate shared between threads may run the phrase check while another thread
+    # is publishing the lazily built filter. Check it after every attribute store.
+    existing = "Retry workers back off for thirty seconds whenever the queue throttles bursts."
+    duplicate = "Retry workers back off for thirty seconds whenever the queue throttles bursts."
+    observed: list[bool] = []
+
+    class ObservedGate(QualityGate):
+        def __setattr__(self, name: str, value: object) -> None:
+            super().__setattr__(name, value)
+            if name.startswith("_trigram") and value is not None:
+                observed.append(self._has_phrase_overlap(duplicate))
+
+    gate = ObservedGate(existing_content=existing)
+    gate._build_novelty_index()
+
+    assert observed
+    assert all(observed)

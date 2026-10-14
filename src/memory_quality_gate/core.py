@@ -7,15 +7,12 @@ from collections import Counter
 from dataclasses import dataclass
 from itertools import islice
 from math import isfinite
+from typing import Literal
 
-# ``typing`` costs a few milliseconds to import, so the Literal aliases are only
-# built for type checkers and, lazily, for runtime access via ``__getattr__``.
-TYPE_CHECKING = False
-if TYPE_CHECKING:
-    from typing import Literal
-
-    Scope = Literal["global", "project", "session"]
-    EntryType = Literal["general", "decision", "lesson", "completed", "product_update"]
+# Defined eagerly: ``typing.get_type_hints`` on the public dataclasses (used by
+# serializers and validators) resolves these names from the module namespace.
+Scope = Literal["global", "project", "session"]
+EntryType = Literal["general", "decision", "lesson", "completed", "product_update"]
 
 SCOPES: tuple[Scope, ...] = ("global", "project", "session")
 ENTRY_TYPES: tuple[EntryType, ...] = (
@@ -102,17 +99,6 @@ _TOKEN_PATTERN = re.compile(r"[\w./:-]{3,}")
 # floating-point noise (e.g. 0.39999999999999997 failing a 0.40 bar).
 _SCORE_DIGITS = 10
 _MATCH_CAP = 5
-
-
-def __getattr__(name: str) -> object:
-    """Build the ``Scope``/``EntryType`` Literal aliases on first runtime access."""
-    if name in ("Scope", "EntryType"):
-        from typing import Literal
-
-        globals()["Scope"] = Literal[SCOPES]
-        globals()["EntryType"] = Literal[ENTRY_TYPES]
-        return globals()[name]
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 @dataclass(slots=True, frozen=True)
@@ -206,8 +192,9 @@ class QualityGate:
         # such as the CLI never pay for them while batch callers amortize them.
         self._novelty_lookups = 0
         self._token_index: dict[str, list[int]] | None = None
-        self._trigram_bits: bytearray | None = None
-        self._trigram_mask = 0
+        # (bits, mask), published as one attribute so a gate shared between threads
+        # never sees the filter half-built.
+        self._trigram_filter: tuple[bytearray, int] | None = None
 
     def evaluate(self, candidate: MemoryCandidate) -> QualityResult:
         """Score a single candidate."""
@@ -310,14 +297,15 @@ class QualityGate:
         if self._token_index is None and self._novelty_lookups > 1:
             self._build_novelty_index()
 
-        if self._token_index is None:
+        token_index = self._token_index
+        if token_index is None:
             shared_max = max(len(candidate_tokens & tokens) for tokens in self._existing_segments)
         else:
             # Count shared tokens per segment through the inverted index; this yields
             # the same best overlap as intersecting the candidate with every segment.
             shared: Counter[int] = Counter()
             for token in candidate_tokens:
-                postings = self._token_index.get(token)
+                postings = token_index.get(token)
                 if postings is not None:
                     shared.update(postings)
             shared_max = max(shared.values(), default=0)
@@ -348,14 +336,13 @@ class QualityGate:
             for trigram in zip(words, words[1:], words[2:], strict=False):
                 slot = hash(trigram) & mask
                 bits[slot >> 3] |= 1 << (slot & 7)
-        self._trigram_bits = bits
-        self._trigram_mask = mask
+        self._trigram_filter = (bits, mask)
         self._token_index = index
 
     def _has_phrase_overlap(self, text: str) -> bool:
         haystack = self._haystack
-        bits = self._trigram_bits
-        mask = self._trigram_mask
+        # One read of the published (bits, mask) pair; see _build_novelty_index.
+        bits, mask = self._trigram_filter or (None, 0)
         words = text.lower().split()
         phrase_count = min(max(0, len(words) - 4), self.max_phrase_probes)
         for index in range(phrase_count):
