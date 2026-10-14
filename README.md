@@ -32,7 +32,7 @@ memory-quality-gate check --text "Always run ./scripts/deploy.sh --dry-run befor
 - Five-dimension scoring model with explicit weights and scope-aware thresholds
 - No runtime dependencies and no LLM or embedding calls
 - Optional novelty check against an existing memory corpus
-- Python API for direct integration into memory pipelines
+- Python API for direct integration into memory pipelines (Python 3.11+)
 - CLI for shell scripts, CI jobs, and local filtering
 
 ## Usage
@@ -46,9 +46,9 @@ memory-quality-gate score \
 Example output:
 
 ```text
-PASS score=0.705 threshold=0.480 scope=project
+PASS score=0.568 threshold=0.550 scope=project
   actionability    0.70
-  specificity      0.85
+  specificity      0.35
   novelty          0.80
   reasoning        0.60
   outcome_linkage  0.20
@@ -69,6 +69,12 @@ The CLI rejects inputs above the default caps of 1,000,000 UTF-8 bytes for
 candidate text and 5,000,000 UTF-8 bytes for `--existing-file`. Local operators
 can override those caps with `--max-input-bytes` and `--max-existing-bytes`.
 Use `--redact-text` for JSON output that may be retained in logs.
+
+`QualityGate` builds its novelty indexes on the second novelty lookup, so a long-lived
+gate scoring many candidates against one corpus (`evaluate_many` or repeated
+`evaluate` calls) is several times faster per candidate than one-shot use, with
+identical scores. `python scripts/bench.py` reports import time, CLI wall time and
+throughput on a generated corpus.
 
 Python API:
 

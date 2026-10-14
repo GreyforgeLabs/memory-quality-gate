@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
-from pathlib import Path
 
 from .core import (
     DEFAULT_MAX_CANDIDATE_CHARS,
@@ -39,10 +37,12 @@ def main(argv: list[str] | None = None) -> int:
         result = gate.evaluate(
             MemoryCandidate(text=text, scope=args.scope, entry_type=args.entry_type)
         )
-    except (CliInputError, TypeError, ValueError) as exc:
+    except (TypeError, ValueError) as exc:
         parser.error(str(exc))
 
     if args.format == "json":
+        import json  # Only JSON output needs it; keeps text-mode startup lean.
+
         print(json.dumps(result.to_dict(redact_candidate_text=args.redact_text), indent=2))
     else:
         _print_text_result(result)
@@ -117,12 +117,14 @@ def _add_shared_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 def _resolve_text(args: argparse.Namespace) -> str:
-    if args.text:
+    # An explicit --text "" is scored (and vetoed) rather than silently falling
+    # through to stdin, which could block on an inherited, never-closed pipe.
+    if args.text is not None:
         _validate_text_bytes(args.text, "--text", args.max_input_bytes)
         return args.text
     if args.file:
         return _read_text_file(args.file, "--file", args.max_input_bytes)
-    if not sys.stdin.isatty():
+    if sys.stdin is not None and not sys.stdin.isatty():
         piped = _read_stdin(args.max_input_bytes)
         if piped.strip():
             return piped
@@ -135,17 +137,13 @@ def _load_existing_content(path: str | None, max_bytes: int) -> str:
     return _read_text_file(path, "--existing-file", max_bytes)
 
 
-def _read_text_file(path_text: str, label: str, max_bytes: int) -> str:
-    path = Path(path_text)
+def _read_text_file(path: str, label: str, max_bytes: int) -> str:
+    # The bounded read enforces the size cap, so no separate stat() is needed.
     try:
-        if path.is_dir():
-            raise CliInputError(f"{label} points to a directory: {path}")
-        if path.exists() and path.stat().st_size > max_bytes:
-            raise CliInputError(f"{label} exceeds maximum size of {max_bytes} bytes: {path}")
-        with path.open("rb") as handle:
+        with open(path, "rb") as handle:
             data = handle.read(max_bytes + 1)
-    except CliInputError:
-        raise
+    except IsADirectoryError as exc:
+        raise CliInputError(f"{label} points to a directory: {path}") from exc
     except OSError as exc:
         raise CliInputError(f"cannot read {label} {path}: {exc.strerror}") from exc
 

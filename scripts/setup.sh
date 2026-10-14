@@ -24,13 +24,10 @@ print(f"{sys.version_info.major}.{sys.version_info.minor}")
 PY
 )"
 
-case "$PYTHON_VERSION" in
-    3.11|3.12) ;;
-    *)
-        echo "ERROR: Python 3.11 or 3.12 is required. Found $PYTHON_VERSION."
-        exit 1
-        ;;
-esac
+if ! python3 -c 'import sys; sys.exit(sys.version_info < (3, 11))'; then
+    echo "ERROR: Python 3.11 or newer is required. Found $PYTHON_VERSION."
+    exit 1
+fi
 
 cd "$PROJECT_DIR"
 

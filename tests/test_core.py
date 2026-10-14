@@ -124,3 +124,137 @@ def test_json_dict_can_redact_candidate_text() -> None:
     payload = result.to_dict(redact_candidate_text=True)
 
     assert payload["candidate"]["text"] == "[redacted]"
+
+
+def test_percentages_and_delimited_paths_count_as_specific() -> None:
+    gate = QualityGate()
+
+    def specificity(text: str) -> float:
+        return gate.evaluate_text(text).scores["specificity"]
+
+    assert specificity("Latency fell by 50% after the cache warmup landed.") == 0.25
+    assert specificity("The retrieval contract lives in docs/scoring-model.md.") == 0.25
+    assert specificity("Keep the worker settings in `config.toml` for now.") == 0.25
+    assert specificity('The resolver reads "/etc/hosts" before DNS.') == 0.25
+    assert specificity("Compare notes across a.md b.md c.md today.") == 0.75
+
+
+def test_reason_and_why_labels_count_as_reasoning() -> None:
+    gate = QualityGate()
+
+    assert (
+        gate.evaluate_text("Pinned the worker image. Reason: cold caches").scores["reasoning"]
+        == 0.6
+    )
+    assert (
+        gate.evaluate_text("Pinned the worker image. Why: cold caches").scores["reasoning"] == 0.6
+    )
+
+
+def test_exact_threshold_boundary_passes_without_float_noise() -> None:
+    # 0.03 + 0.15 + 0.06 + 0.09 + 0.07 is exactly 0.40, the effective global bar;
+    # naive float summation produced 0.39999999999999997 and rejected it.
+    gate = QualityGate(existing_content="worker. shard every lists nightly rebuilt layer cache")
+    result = gate.evaluate_text(
+        "Release cache layer v1.2.3 rebuilt nightly because docs/cache-notes.md lists "
+        "every shard worker.",
+        scope="global",
+        entry_type="completed",
+    )
+
+    assert result.scores == {
+        "actionability": 0.1,
+        "specificity": 0.6,
+        "novelty": 0.3,
+        "reasoning": 0.6,
+        "outcome_linkage": 0.7,
+    }
+    assert result.weighted_score == 0.4
+    assert result.threshold == 0.4
+    assert result.passed is True
+
+
+def test_specificity_shortcut_never_raises_a_custom_threshold() -> None:
+    gate = QualityGate(thresholds={"global": 0.30, "project": 0.55, "session": 0.70})
+    result = gate.evaluate_text("Pin v1.2.3 in src/app.py and docs/x.md here", scope="global")
+
+    assert result.scores["specificity"] >= 0.45
+    assert result.threshold == 0.30
+    assert (
+        QualityGate().evaluate_text("Pin v1.2.3 in src/app.py and docs/x.md here").threshold == 0.48
+    )
+
+
+def test_scores_are_clean_decimals() -> None:
+    result = QualityGate().evaluate_text(
+        "Always run ./scripts/deploy.sh --dry-run before shipping v2.4.1 because "
+        "it prevents partial deploys."
+    )
+
+    assert result.to_dict()["scores"]["actionability"] == 0.8
+    assert all(score == round(score, 2) for score in result.scores.values())
+
+
+def test_to_dict_returns_independent_scores() -> None:
+    result = QualityGate().evaluate_text("Always check docs/scoring-model.md before release.")
+    payload = result.to_dict()
+    payload["scores"]["novelty"] = -1.0
+
+    assert result.scores["novelty"] == 0.8
+
+
+def test_non_ascii_duplicates_are_detected() -> None:
+    memory = "日本語のメモはここにあります。設定ファイルを確認してください。"
+    accented = "Vérifier la clé de déploiement après chaque mise à jour du schéma."
+
+    assert QualityGate(existing_content=memory).evaluate_text(memory).scores["novelty"] == 0.1
+    assert QualityGate(existing_content=accented).evaluate_text(accented).scores["novelty"] == 0.1
+
+
+def test_batch_novelty_matches_one_shot_novelty() -> None:
+    existing = "\n".join(
+        [
+            "Always check docs/scoring-model.md before changing thresholds.",
+            "Retry workers back off for 30 seconds because the queue throttles bursts.",
+            "Deploy previews run on port 8443 while the staging cache warms up.",
+            "Snapshot fixtures rotate after every schema migration in src/db/schema.py.",
+        ]
+    )
+    candidates = [
+        "Always check docs/scoring-model.md before changing thresholds.",
+        "Retry workers back off for 30 seconds because the queue throttles.",
+        "The queue throttles bursts so retry workers back off for a while now.",
+        "Deploy previews run on port 8443 while staging warms up the cache today.",
+        "Rotate snapshot fixtures after schema changes in src/db/schema.py always.",
+        "Completely unrelated note about lunch plans and coffee machines downstairs.",
+    ]
+    batch_gate = QualityGate(existing_content=existing)
+    batch = [
+        r.scores["novelty"]
+        for r in batch_gate.evaluate_many([MemoryCandidate(text=text) for text in candidates])
+    ]
+    one_shot = [
+        QualityGate(existing_content=existing).evaluate_text(text).scores["novelty"]
+        for text in candidates
+    ]
+
+    assert batch_gate._token_index is not None
+    assert batch == one_shot
+    assert len(set(batch)) >= 4
+
+
+def test_scope_and_entry_type_aliases_stay_importable() -> None:
+    import typing
+
+    from memory_quality_gate import ENTRY_TYPES, SCOPES
+    from memory_quality_gate.core import EntryType, Scope
+
+    assert typing.get_args(Scope) == SCOPES
+    assert typing.get_args(EntryType) == ENTRY_TYPES
+
+
+def test_non_string_threshold_keys_raise_value_error() -> None:
+    thresholds = {"global": 0.45, "project": 0.55, "session": 0.70, 1: 0.5}
+
+    with pytest.raises(ValueError, match="unknown 1"):
+        QualityGate(thresholds=thresholds)

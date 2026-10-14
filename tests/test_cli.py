@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -104,3 +105,56 @@ def test_cli_redacts_candidate_text_in_json() -> None:
     assert proc.returncode == 0
     payload = json.loads(proc.stdout)
     assert payload["candidate"]["text"] == "[redacted]"
+
+
+def test_cli_explicit_empty_text_does_not_read_stdin() -> None:
+    proc = run_cli(["score", "--text", ""], stdin="Always check docs/scoring-model.md first.")
+
+    assert proc.returncode == 0
+    assert proc.stdout.startswith("FAIL score=0.000")
+    assert "Hard veto" in proc.stdout
+
+
+def test_cli_closed_stdin_reports_usage_error() -> None:
+    proc = subprocess.run(
+        [sys.executable, "-m", "memory_quality_gate", "score"],
+        cwd=ROOT,
+        env={"PYTHONPATH": str(ROOT / "src")},
+        capture_output=True,
+        text=True,
+        check=False,
+        preexec_fn=lambda: os.close(0),
+    )
+
+    assert proc.returncode == 1
+    assert "Provide --text, --file, or piped stdin input." in proc.stderr
+    assert "Traceback" not in proc.stderr
+
+
+def test_cli_rejects_directory_file(tmp_path: Path) -> None:
+    proc = run_cli(["score", "--file", str(tmp_path)])
+
+    assert proc.returncode == 2
+    assert "--file points to a directory" in proc.stderr
+
+
+def test_cli_startup_skips_unused_stdlib_modules() -> None:
+    # Compare with the stdlib modules the CLI genuinely needs: some Python versions
+    # import typing from those already, but the package must not add these itself.
+    probe = (
+        "import sys; {}; "
+        "print(sorted(m for m in ('typing', 'json', 'pathlib') if m in sys.modules))"
+    )
+
+    def loaded(statement: str) -> str:
+        return subprocess.run(
+            [sys.executable, "-c", probe.format(statement)],
+            cwd=ROOT,
+            env={"PYTHONPATH": str(ROOT / "src")},
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+
+    baseline = loaded("import argparse, collections, dataclasses, itertools, math, re")
+    assert loaded("import memory_quality_gate.cli") == baseline

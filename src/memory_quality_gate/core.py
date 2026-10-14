@@ -3,12 +3,19 @@
 from __future__ import annotations
 
 import re
-from dataclasses import asdict, dataclass
+from collections import Counter
+from dataclasses import dataclass
+from itertools import islice
 from math import isfinite
-from typing import Literal
 
-Scope = Literal["global", "project", "session"]
-EntryType = Literal["general", "decision", "lesson", "completed", "product_update"]
+# ``typing`` costs a few milliseconds to import, so the Literal aliases are only
+# built for type checkers and, lazily, for runtime access via ``__getattr__``.
+TYPE_CHECKING = False
+if TYPE_CHECKING:
+    from typing import Literal
+
+    Scope = Literal["global", "project", "session"]
+    EntryType = Literal["general", "decision", "lesson", "completed", "product_update"]
 
 SCOPES: tuple[Scope, ...] = ("global", "project", "session")
 ENTRY_TYPES: tuple[EntryType, ...] = (
@@ -45,31 +52,9 @@ DEFAULT_SCOPE_THRESHOLDS: dict[Scope, float] = {
     "session": 0.70,
 }
 
-_STOPWORDS = {
-    "a",
-    "an",
-    "and",
-    "are",
-    "as",
-    "at",
-    "be",
-    "by",
-    "for",
-    "from",
-    "in",
-    "is",
-    "it",
-    "of",
-    "on",
-    "or",
-    "that",
-    "the",
-    "this",
-    "to",
-    "was",
-    "were",
-    "with",
-}
+_STOPWORDS = frozenset(
+    "a an and are as at be by for from in is it of on or that the this to was were with".split()
+)
 
 _ACTIONABLE_PATTERNS = re.compile(
     r"\b(always|avoid|check|confirm|do not|don't|ensure|fix|if .{0,40} then|"
@@ -79,20 +64,20 @@ _ACTIONABLE_PATTERNS = re.compile(
 )
 
 _SPECIFIC_PATTERNS = re.compile(
-    r"(\$\d[\d,.]*|\b\d{4}-\d{2}-\d{2}\b|\b\d{1,3}%\b|\bport \d+\b|"
+    r"(\$\d[\d,.]*|\b\d{4}-\d{2}-\d{2}\b|\b\d{1,3}%|\bport \d+\b|"
     r"\b(issue|pr) #?\d+\b|\bcommit [a-f0-9]{7,40}\b|"
     r"\bv?\d+\.\d+(?:\.\d+)?\b|"
     r"\b[A-Z_]{2,}=\S+\b|"
     r"https?://\S+|"
-    r"(?:^|[\s(])(?:\./|\.\./|/)?[\w./-]+\.(?:md|txt|py|json|yaml|yml|toml|ini|cfg|sh|sql|ts|tsx|js)(?:$|[\s),])|"
-    r"(?:^|[\s(])(?:\./|\.\./|/)[\w./-]+(?:$|[\s),]))",
+    r"(?<![\w./-])[\w./-]+\.(?:md|txt|py|json|yaml|yml|toml|ini|cfg|sh|sql|ts|tsx|js)(?![\w/-])|"
+    r"(?<![\w./-])\.{0,2}/[\w./-]+)",
     re.IGNORECASE,
 )
 
 _REASONING_PATTERNS = re.compile(
-    r"\b(because|caused by|ensures?|means?|prevents?|reason:|results? in|"
+    r"\b(?:(?:because|caused by|ensures?|means?|prevents?|results? in|"
     r"since|so that|therefore|this allows?|this avoids?|this fixes?|"
-    r"to avoid|to ensure|to prevent|why:)\b",
+    r"to avoid|to ensure|to prevent)\b|(?:reason|why):)",
     re.IGNORECASE,
 )
 
@@ -107,6 +92,27 @@ _VETO_PATTERNS = re.compile(
     r"^(ack|done|got it|looks good|no|noted|ok|okay|sure|thanks|understood|yes)\.?$",
     re.IGNORECASE,
 )
+
+# Runs of 3+ token characters; shorter runs are never tokens, so they are skipped
+# by the regex instead of being filtered in Python.
+_TOKEN_PATTERN = re.compile(r"[\w./:-]{3,}")
+
+# Every component score is a multiple of 0.05 and every weighted sum is compared
+# against a threshold with at most a few decimals, so rounding removes binary
+# floating-point noise (e.g. 0.39999999999999997 failing a 0.40 bar).
+_SCORE_DIGITS = 10
+_MATCH_CAP = 5
+
+
+def __getattr__(name: str) -> object:
+    """Build the ``Scope``/``EntryType`` Literal aliases on first runtime access."""
+    if name in ("Scope", "EntryType"):
+        from typing import Literal
+
+        globals()["Scope"] = Literal[SCOPES]
+        globals()["EntryType"] = Literal[ENTRY_TYPES]
+        return globals()[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 @dataclass(slots=True, frozen=True)
@@ -124,9 +130,7 @@ class MemoryCandidate:
         if self.scope not in SCOPES:
             raise ValueError(f"MemoryCandidate.scope must be one of: {', '.join(SCOPES)}")
         if self.entry_type not in ENTRY_TYPES:
-            raise ValueError(
-                f"MemoryCandidate.entry_type must be one of: {', '.join(ENTRY_TYPES)}"
-            )
+            raise ValueError(f"MemoryCandidate.entry_type must be one of: {', '.join(ENTRY_TYPES)}")
 
 
 @dataclass(slots=True, frozen=True)
@@ -142,12 +146,14 @@ class QualityResult:
 
     def to_dict(self, *, redact_candidate_text: bool = False) -> dict[str, object]:
         """Return a JSON-serializable representation."""
-        candidate = asdict(self.candidate)
-        if redact_candidate_text:
-            candidate["text"] = "[redacted]"
+        candidate = self.candidate
         return {
-            "candidate": candidate,
-            "scores": self.scores,
+            "candidate": {
+                "text": "[redacted]" if redact_candidate_text else candidate.text,
+                "scope": candidate.scope,
+                "entry_type": candidate.entry_type,
+            },
+            "scores": dict(self.scores),
             "weighted_score": round(self.weighted_score, 3),
             "threshold": round(self.threshold, 3),
             "passed": self.passed,
@@ -195,6 +201,13 @@ class QualityGate:
             existing_content,
             self.max_existing_segments,
         )
+        self._haystack = existing_content.lower()
+        # Novelty indexes are built on the second novelty lookup, so one-shot callers
+        # such as the CLI never pay for them while batch callers amortize them.
+        self._novelty_lookups = 0
+        self._token_index: dict[str, list[int]] | None = None
+        self._trigram_bits: bytearray | None = None
+        self._trigram_mask = 0
 
     def evaluate(self, candidate: MemoryCandidate) -> QualityResult:
         """Score a single candidate."""
@@ -220,12 +233,15 @@ class QualityGate:
             "outcome_linkage": self._score_outcome_linkage(text, candidate.entry_type),
         }
 
-        weighted_score = sum(self.weights[name] * score for name, score in scores.items())
+        weighted_score = round(
+            sum(self.weights[name] * score for name, score in scores.items()), _SCORE_DIGITS
+        )
         effective_threshold = threshold
 
         # Highly specific facts are still useful even when they are not framed as rules.
+        # The shortcut only ever lowers the bar, never raises a custom threshold below 0.40.
         if scores["specificity"] >= 0.45 and candidate.scope in ("global", "project"):
-            effective_threshold = max(0.40, threshold - 0.07)
+            effective_threshold = min(threshold, round(max(0.40, threshold - 0.07), _SCORE_DIGITS))
 
         passed = weighted_score >= effective_threshold
         reason = ""
@@ -267,21 +283,20 @@ class QualityGate:
 
     @staticmethod
     def _score_actionability(text: str) -> float:
-        matches = len(_ACTIONABLE_PATTERNS.findall(text))
+        matches = _count_matches(_ACTIONABLE_PATTERNS, text)
         if matches == 0:
             return 0.10
         if matches == 1:
             return 0.50
         if matches == 2:
             return 0.70
-        return min(1.0, 0.70 + (matches - 2) * 0.10)
+        return round(min(1.0, 0.70 + (matches - 2) * 0.10), 2)
 
     @staticmethod
     def _score_specificity(text: str) -> float:
-        matches = len(_SPECIFIC_PATTERNS.findall(text))
-        base = min(1.0, matches * 0.25)
+        matches = _count_matches(_SPECIFIC_PATTERNS, text)
         length_bonus = 0.10 if len(text) > 80 else 0.0
-        return min(1.0, base + length_bonus)
+        return round(min(1.0, matches * 0.25 + length_bonus), 2)
 
     def _score_novelty(self, text: str) -> float:
         if not self._existing_segments:
@@ -291,13 +306,24 @@ class QualityGate:
         if not candidate_tokens:
             return 0.60
 
-        best_overlap = 0.0
-        for segment_tokens in self._existing_segments:
-            overlap = len(candidate_tokens & segment_tokens) / len(candidate_tokens)
-            if overlap > best_overlap:
-                best_overlap = overlap
-            if best_overlap >= 0.85:
-                return 0.10
+        self._novelty_lookups += 1
+        if self._token_index is None and self._novelty_lookups > 1:
+            self._build_novelty_index()
+
+        if self._token_index is None:
+            shared_max = max(len(candidate_tokens & tokens) for tokens in self._existing_segments)
+        else:
+            # Count shared tokens per segment through the inverted index; this yields
+            # the same best overlap as intersecting the candidate with every segment.
+            shared: Counter[int] = Counter()
+            for token in candidate_tokens:
+                postings = self._token_index.get(token)
+                if postings is not None:
+                    shared.update(postings)
+            shared_max = max(shared.values(), default=0)
+        best_overlap = shared_max / len(candidate_tokens)
+        if best_overlap >= 0.85:
+            return 0.10
 
         if self._has_phrase_overlap(text):
             return 0.20
@@ -307,33 +333,61 @@ class QualityGate:
             return 0.55
         return 0.80
 
+    def _build_novelty_index(self) -> None:
+        index: dict[str, list[int]] = {}
+        for position, tokens in enumerate(self._existing_segments):
+            for token in tokens:
+                index.setdefault(token, []).append(position)
+        # A one-hash bit filter of every in-line word trigram in the corpus, sized at
+        # about 16 bits per word (2 MiB for the 5 MB default cap). A false positive
+        # only costs the exact substring scan, so results never change.
+        mask = (1 << max(16, (2 * len(self._haystack)).bit_length())) - 1
+        bits = bytearray((mask >> 3) + 1)
+        for line in self._haystack.splitlines():
+            words = line.split()
+            for trigram in zip(words, words[1:], words[2:], strict=False):
+                slot = hash(trigram) & mask
+                bits[slot >> 3] |= 1 << (slot & 7)
+        self._trigram_bits = bits
+        self._trigram_mask = mask
+        self._token_index = index
+
     def _has_phrase_overlap(self, text: str) -> bool:
-        haystack = self.existing_content.lower()
+        haystack = self._haystack
+        bits = self._trigram_bits
+        mask = self._trigram_mask
         words = text.lower().split()
         phrase_count = min(max(0, len(words) - 4), self.max_phrase_probes)
         for index in range(phrase_count):
-            probe = " ".join(words[index : index + 5]).strip()
+            # A probe's three inner words are single-space-delimited on both sides, so
+            # they can only occur in the corpus as consecutive words of one line: skip
+            # the substring scan when the filter has never seen that trigram.
+            if bits is not None:
+                slot = hash(tuple(words[index + 1 : index + 4])) & mask
+                if not bits[slot >> 3] >> (slot & 7) & 1:
+                    continue
+            probe = " ".join(words[index : index + 5])
             if len(probe) >= 20 and probe in haystack:
                 return True
         return False
 
     @staticmethod
     def _score_reasoning(text: str) -> float:
-        matches = len(_REASONING_PATTERNS.findall(text))
+        matches = _count_matches(_REASONING_PATTERNS, text)
         if matches == 0:
             return 0.20
         if matches == 1:
             return 0.60
-        return min(1.0, 0.60 + (matches - 1) * 0.20)
+        return round(min(1.0, 0.60 + (matches - 1) * 0.20), 2)
 
     @staticmethod
     def _score_outcome_linkage(text: str, entry_type: EntryType) -> float:
-        matches = len(_OUTCOME_PATTERNS.findall(text))
-        if entry_type in {"completed", "product_update"}:
-            return max(0.70, min(1.0, matches * 0.30 + 0.40))
+        matches = _count_matches(_OUTCOME_PATTERNS, text)
+        if entry_type in ("completed", "product_update"):
+            return round(max(0.70, min(1.0, matches * 0.30 + 0.40)), 2)
         if matches == 0:
             return 0.20
-        return min(1.0, 0.40 + matches * 0.20)
+        return round(min(1.0, 0.40 + matches * 0.20), 2)
 
     @staticmethod
     def _rejection_reason(scores: dict[str, float]) -> str:
@@ -349,12 +403,14 @@ class QualityGate:
         return f"Below threshold; weakest dimension was {weakest}"
 
 
+def _count_matches(pattern: re.Pattern[str], text: str) -> int:
+    # Every component score saturates by its fifth match, so stop scanning there:
+    # long inputs no longer pay for a full findall() per dimension.
+    return sum(1 for _ in islice(pattern.finditer(text), _MATCH_CAP))
+
+
 def _normalized_tokens(text: str) -> set[str]:
-    return {
-        token
-        for token in re.findall(r"[a-z0-9_./:-]+", text.lower())
-        if len(token) > 2 and token not in _STOPWORDS
-    }
+    return set(_TOKEN_PATTERN.findall(text.lower())).difference(_STOPWORDS)
 
 
 def _validate_text_size(text: str, label: str, max_chars: int | None) -> None:
@@ -374,18 +430,18 @@ def _validate_positive_int(value: int, label: str) -> int:
     return value
 
 
-def _validate_thresholds(thresholds: dict[Scope, float]) -> dict[Scope, float]:
-    missing = [scope for scope in SCOPES if scope not in thresholds]
-    extra = sorted(set(thresholds) - set(SCOPES))
+def _require_exact_keys(mapping: dict, expected: tuple[str, ...], label: str) -> None:
+    missing = [key for key in expected if key not in mapping]
+    extra = sorted(str(key) for key in mapping if key not in expected)
     if missing or extra:
-        detail = []
-        if missing:
-            detail.append(f"missing {', '.join(missing)}")
+        detail = [f"missing {', '.join(missing)}"] if missing else []
         if extra:
             detail.append(f"unknown {', '.join(extra)}")
-        expected = ", ".join(SCOPES)
-        raise ValueError(f"thresholds must define exactly {expected} ({'; '.join(detail)})")
+        raise ValueError(f"{label} must define exactly {', '.join(expected)} ({'; '.join(detail)})")
 
+
+def _validate_thresholds(thresholds: dict[Scope, float]) -> dict[Scope, float]:
+    _require_exact_keys(thresholds, SCOPES, "thresholds")
     validated: dict[Scope, float] = {}
     for scope in SCOPES:
         value = thresholds[scope]
@@ -396,18 +452,7 @@ def _validate_thresholds(thresholds: dict[Scope, float]) -> dict[Scope, float]:
 
 
 def _validate_weights(weights: dict[str, float]) -> dict[str, float]:
-    missing = [name for name in SCORE_NAMES if name not in weights]
-    extra = sorted(set(weights) - set(SCORE_NAMES))
-    if missing or extra:
-        detail = []
-        if missing:
-            detail.append(f"missing {', '.join(missing)}")
-        if extra:
-            detail.append(f"unknown {', '.join(extra)}")
-        raise ValueError(
-            f"weights must define exactly {', '.join(SCORE_NAMES)} ({'; '.join(detail)})"
-        )
-
+    _require_exact_keys(weights, SCORE_NAMES, "weights")
     validated: dict[str, float] = {}
     for name in SCORE_NAMES:
         value = weights[name]
@@ -415,8 +460,7 @@ def _validate_weights(weights: dict[str, float]) -> dict[str, float]:
             raise ValueError(f"weight for {name} must be a finite non-negative number")
         validated[name] = float(value)
 
-    total = sum(validated.values())
-    if abs(total - 1.0) > 0.000001:
+    if abs(sum(validated.values()) - 1.0) > 0.000001:
         raise ValueError("weights must sum to 1.0")
     return validated
 

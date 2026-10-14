@@ -28,7 +28,7 @@ memory-quality-gate/
 
 ## Setup Prerequisites
 
-- Python 3.11 or 3.12
+- Python 3.11 or newer
 - `python3 -m venv`
 - Internet access for the initial `pip install -e .[dev]`
 
