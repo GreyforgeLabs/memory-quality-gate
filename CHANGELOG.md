@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- CLI: `--file ""` is a usage error instead of silently reading stdin, and `--existing-file ""` is a usage error instead of silently skipping the duplicate check (both usually mean an unset shell variable)
+- CLI: an invalid `--max-input-bytes` or `--max-existing-bytes` value reports `must be a positive integer, got 'abc'` instead of `invalid _positive_int value`
+- CLI: input errors such as an unreadable file show the subcommand's usage line and name (`memory-quality-gate check: error: ...`)
+- Specificity no longer counts `+/-`, slash-prefixed flags such as `/-quiet`, or closing tags such as `</div>` as file paths; every real path form counted before (absolute, relative, hidden, `../`) still counts
+
+### Documentation
+
+- README documents the CLI exit codes, including that `check` rejection and usage errors share exit code 2 and how to tell them apart
+
 ## [0.2.1] - 2026-10-14
 
 ### Performance

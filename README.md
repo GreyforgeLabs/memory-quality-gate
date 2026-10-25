@@ -70,6 +70,18 @@ candidate text and 5,000,000 UTF-8 bytes for `--existing-file`. Local operators
 can override those caps with `--max-input-bytes` and `--max-existing-bytes`.
 Use `--redact-text` for JSON output that may be retained in logs.
 
+Exit codes:
+
+| Code | Meaning |
+|---:|---|
+| `0` | `score` printed a result (pass or fail), or `check` passed |
+| `1` | No candidate text: no `--text`, no `--file`, and no piped stdin |
+| `2` | `check` rejected the candidate, **or** a usage or input error (bad option, unreadable or oversized file, invalid UTF-8) |
+
+A rejected candidate always prints its result on stdout, while usage and input
+errors print only to stderr. Scripts that must tell the two apart can check
+whether stdout is empty, or parse the `--format json` result.
+
 `QualityGate` builds its novelty indexes on the second novelty lookup, so a long-lived
 gate scoring many candidates against one corpus (`evaluate_many` or repeated
 `evaluate` calls) is several times faster per candidate than one-shot use, with
