@@ -139,6 +139,21 @@ def test_percentages_and_delimited_paths_count_as_specific() -> None:
     assert specificity("Compare notes across a.md b.md c.md today.") == 0.75
 
 
+def test_slash_punctuation_and_markup_do_not_count_as_paths() -> None:
+    gate = QualityGate()
+
+    def specificity(text: str) -> float:
+        return gate.evaluate_text(text).scores["specificity"]
+
+    assert specificity("Keep the drift within +/- a few units of the target.") == 0.0
+    assert specificity("Close the wrapper with </div> in the shared template.") == 0.0
+    assert specificity("Pass the dash flag as /-quiet to the old installer.") == 0.0
+    # Real paths, including hidden files and relative forms, still count.
+    assert specificity("Settings live in ~/.config/worker for every host.") == 0.25
+    assert specificity("Copy ../.env.example before the first start.") == 0.25
+    assert specificity("The worker binary is /usr/local/bin/worker today.") == 0.25
+
+
 def test_reason_and_why_labels_count_as_reasoning() -> None:
     gate = QualityGate()
 

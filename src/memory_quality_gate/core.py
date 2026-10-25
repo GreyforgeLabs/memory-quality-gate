@@ -67,7 +67,10 @@ _SPECIFIC_PATTERNS = re.compile(
     r"\b[A-Z_]{2,}=\S+\b|"
     r"https?://\S+|"
     r"(?<![\w./-])[\w./-]+\.(?:md|txt|py|json|yaml|yml|toml|ini|cfg|sh|sql|ts|tsx|js)(?![\w/-])|"
-    r"(?<![\w./-])\.{0,2}/[\w./-]+)",
+    # A slash path needs a word character after the slash (optionally behind more
+    # dots or slashes, as in /.config), so "+/-", "/-flag" and closing tags such as
+    # "</div>" are not counted.
+    r"(?<![\w./-])(?:\.{1,2}|(?<!<))/[./]*\w[\w./-]*)",
     re.IGNORECASE,
 )
 
