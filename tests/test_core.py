@@ -154,6 +154,23 @@ def test_slash_punctuation_and_markup_do_not_count_as_paths() -> None:
     assert specificity("The worker binary is /usr/local/bin/worker today.") == 0.25
 
 
+def test_angle_bracket_and_dash_paths_still_count_as_paths() -> None:
+    gate = QualityGate()
+
+    def specificity(text: str) -> float:
+        return gate.evaluate_text(text).scores["specificity"]
+
+    # Shell input redirection and bracketed paths are not closing tags.
+    assert specificity("Count entries with wc -l </etc/hosts on the box.") == 0.25
+    assert specificity("Point the loader at </srv/shared/cache> again.") == 0.25
+    assert specificity("Feed the job from </tmp at the start.") == 0.25
+    # A ./ or ../ prefix marks a dash-named file as a path.
+    assert specificity("Delete the stray file with rm ./-rf before the run.") == 0.25
+    assert specificity("Copy ../-draft into place first.") == 0.25
+    # Closing tags, with or without a namespace or trailing space, still do not count.
+    assert specificity("Close it with </my-widget> or </svg:g > in the template.") == 0.0
+
+
 def test_reason_and_why_labels_count_as_reasoning() -> None:
     gate = QualityGate()
 

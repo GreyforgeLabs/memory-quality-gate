@@ -68,9 +68,10 @@ _SPECIFIC_PATTERNS = re.compile(
     r"https?://\S+|"
     r"(?<![\w./-])[\w./-]+\.(?:md|txt|py|json|yaml|yml|toml|ini|cfg|sh|sql|ts|tsx|js)(?![\w/-])|"
     # A slash path needs a word character after the slash (optionally behind more
-    # dots or slashes, as in /.config), so "+/-", "/-flag" and closing tags such as
-    # "</div>" are not counted.
-    r"(?<![\w./-])(?:\.{1,2}|(?<!<))/[./]*\w[\w./-]*)",
+    # dots or slashes, as in /.config; a ./ or ../ prefix also allows dashes, as in
+    # ./-rf), so "+/-" and "/-flag" are not counted. After "<" only a closing tag
+    # such as "</div>" is skipped: "wc -l </etc/hosts" and "</a/b>" still count.
+    r"(?<![\w./-])(?:\.{1,2}/[./-]*|(?:(?<!<)|(?!/[\w:-]+\s*>))/[./]*)\w[\w./-]*)",
     re.IGNORECASE,
 )
 

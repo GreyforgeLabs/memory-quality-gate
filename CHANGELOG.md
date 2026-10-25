@@ -11,7 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - CLI: `--file ""` is a usage error instead of silently reading stdin, and `--existing-file ""` is a usage error instead of silently skipping the duplicate check (both usually mean an unset shell variable)
 - CLI: an invalid `--max-input-bytes` or `--max-existing-bytes` value reports `must be a positive integer, got 'abc'` instead of `invalid _positive_int value`
 - CLI: input errors such as an unreadable file show the subcommand's usage line and name (`memory-quality-gate check: error: ...`)
-- Specificity no longer counts `+/-`, slash-prefixed flags such as `/-quiet`, or closing tags such as `</div>` as file paths; every real path form counted before (absolute, relative, hidden, `../`) still counts
+- Specificity no longer counts `+/-`, slash-prefixed flags such as `/-quiet`, or closing tags such as `</div>` as file paths. Absolute, relative (`./`, `../`), home (`~/`) and hidden paths still count, including after `<` as in `wc -l </etc/hosts`. A lone `/.` and a single-segment path written as a tag (`</tmp>`) no longer count
 
 ### Documentation
 
