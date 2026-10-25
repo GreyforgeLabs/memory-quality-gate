@@ -155,3 +155,46 @@ def test_cli_startup_skips_unused_stdlib_modules() -> None:
 
     baseline = loaded("import argparse, collections, dataclasses, itertools, math, re, typing")
     assert loaded("import memory_quality_gate.cli") == baseline
+
+
+def test_cli_empty_file_argument_is_an_error_not_stdin() -> None:
+    proc = run_cli(["score", "--file", ""], stdin="Always check docs/scoring-model.md first.")
+
+    assert proc.returncode == 2
+    assert "--file" in proc.stderr
+    assert proc.stdout == ""
+
+
+def test_cli_empty_existing_file_argument_is_an_error() -> None:
+    # An unset shell variable must not silently disable the duplicate check.
+    proc = run_cli(
+        [
+            "check",
+            "--text",
+            "Always run ./scripts/deploy.sh --dry-run before shipping v2.4.1 because "
+            "it prevents partial deploys.",
+            "--existing-file",
+            "",
+        ]
+    )
+
+    assert proc.returncode == 2
+    assert "--existing-file" in proc.stderr
+    assert proc.stdout == ""
+
+
+def test_cli_invalid_byte_cap_message_names_the_rule() -> None:
+    for value in ("abc", "0", "-5"):
+        proc = run_cli(["score", "--text", "x", "--max-input-bytes", value])
+
+        assert proc.returncode == 2
+        assert "argument --max-input-bytes: must be a positive integer" in proc.stderr
+        assert "_positive_int" not in proc.stderr
+
+
+def test_cli_input_errors_show_the_subcommand_usage(tmp_path: Path) -> None:
+    proc = run_cli(["check", "--file", str(tmp_path / "missing.txt")])
+
+    assert proc.returncode == 2
+    assert "usage: memory-quality-gate check" in proc.stderr
+    assert "memory-quality-gate check: error: cannot read --file" in proc.stderr

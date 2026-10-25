@@ -25,6 +25,8 @@ def main(argv: list[str] | None = None) -> int:
     if not args.command:
         parser.print_help()
         return 0
+    # Report input errors against the subcommand, so the usage line shows its options.
+    command_parser = args.command_parser
 
     try:
         text = _resolve_text(args)
@@ -38,7 +40,7 @@ def main(argv: list[str] | None = None) -> int:
             MemoryCandidate(text=text, scope=args.scope, entry_type=args.entry_type)
         )
     except (TypeError, ValueError) as exc:
-        parser.error(str(exc))
+        command_parser.error(str(exc))
 
     if args.format == "json":
         import json  # Only JSON output needs it; keeps text-mode startup lean.
@@ -62,6 +64,7 @@ def _build_parser() -> argparse.ArgumentParser:
     for command in ("score", "check"):
         subparser = subparsers.add_parser(command)
         _add_shared_arguments(subparser)
+        subparser.set_defaults(command_parser=subparser)
 
     return parser
 
@@ -122,7 +125,8 @@ def _resolve_text(args: argparse.Namespace) -> str:
     if args.text is not None:
         _validate_text_bytes(args.text, "--text", args.max_input_bytes)
         return args.text
-    if args.file:
+    # Same for --file "": an unset shell variable must not fall through to stdin.
+    if args.file is not None:
         return _read_text_file(args.file, "--file", args.max_input_bytes)
     if sys.stdin is not None and not sys.stdin.isatty():
         piped = _read_stdin(args.max_input_bytes)
@@ -132,12 +136,16 @@ def _resolve_text(args: argparse.Namespace) -> str:
 
 
 def _load_existing_content(path: str | None, max_bytes: int) -> str:
-    if not path:
+    # Only an omitted flag means "no corpus"; --existing-file "" (an unset shell
+    # variable) is an error rather than a silently disabled duplicate check.
+    if path is None:
         return ""
     return _read_text_file(path, "--existing-file", max_bytes)
 
 
 def _read_text_file(path: str, label: str, max_bytes: int) -> str:
+    if not path:
+        raise CliInputError(f"{label} needs a file path, got an empty string")
     # The bounded read enforces the size cap, so no separate stat() is needed.
     try:
         with open(path, "rb") as handle:
@@ -178,9 +186,14 @@ def _validate_text_bytes(text: str, label: str, max_bytes: int) -> None:
 
 
 def _positive_int(value: str) -> int:
-    parsed = int(value)
+    # Raising ArgumentTypeError (not ValueError) for every bad value keeps argparse
+    # from printing this helper's private name in the error message.
+    try:
+        parsed = int(value)
+    except ValueError:
+        parsed = 0
     if parsed <= 0:
-        raise argparse.ArgumentTypeError("must be a positive integer")
+        raise argparse.ArgumentTypeError(f"must be a positive integer, got {value!r}")
     return parsed
 
 
