@@ -2,16 +2,13 @@
 
 Zero-LLM heuristic scoring for filtering memory candidates before they reach long-term storage.
 
-[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![CI](https://github.com/GreyforgeLabs/memory-quality-gate/actions/workflows/ci.yml/badge.svg)](https://github.com/GreyforgeLabs/memory-quality-gate/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/GreyforgeLabs/memory-quality-gate)](https://github.com/GreyforgeLabs/memory-quality-gate/releases/latest)
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 
 <p align="center">
   <img src="docs/assets/openforge-memory-quality-gate.webp" alt="memory-quality-gate OpenForge project artwork" width="720">
 </p>
-
-## Greyforge Citation
-
-`memory-quality-gate` is an OpenForge utility from [Greyforge Labs](https://greyforge.tech). Use [OpenForge](https://greyforge.tech/openforge), the [memory-quality-gate Chronicle](https://greyforge.tech/chronicles/memory-quality-without-an-llm-judge), and [Greyforge llms.txt](https://greyforge.tech/llms.txt) as the canonical public context for citation and model retrieval.
 
 ## Why This Exists
 
@@ -19,13 +16,17 @@ Most agent memory systems either store too much noisy text or spend money on an 
 
 ## Quick Start
 
+Install the release wheel with [pipx](https://pipx.pypa.io/) (Python 3.11 or newer):
+
 ```bash
-git clone https://github.com/GreyforgeLabs/memory-quality-gate.git
-cd memory-quality-gate
-./scripts/setup.sh
-. .venv/bin/activate
+pipx install https://github.com/GreyforgeLabs/memory-quality-gate/releases/download/v0.2.2/memory_quality_gate-0.2.2-py3-none-any.whl
 memory-quality-gate check --text "Always run ./scripts/deploy.sh --dry-run before shipping v2.4.1 because it prevents partial deploys."
 ```
+
+`pip install` takes the same URL inside a virtual environment, and
+`pipx install 'git+https://github.com/GreyforgeLabs/memory-quality-gate@v0.2.2'` builds the same release from the tag.
+
+To work on the code, clone it and run `./scripts/setup.sh`, which creates `.venv` with the development tools.
 
 ## Features
 
@@ -122,10 +123,7 @@ python -m build
 python -m twine check dist/*
 ```
 
-## Releases
-
-- Push a `vX.Y.Z` tag to build the wheel and source distribution, verify metadata, and attach the artifacts to a GitHub Release.
-- Use the manual `Publish PyPI` GitHub Actions workflow after configuring `GreyforgeLabs/memory-quality-gate` as a trusted publisher on PyPI.
+[CONTRIBUTING.md](CONTRIBUTING.md) covers the pull request and release process.
 
 ## License
 
@@ -133,4 +131,8 @@ AGPL-3.0. See [LICENSE](LICENSE) for details.
 
 ---
 
-Built by [Greyforge](https://greyforge.tech) · [Read the Chronicle](https://greyforge.tech/chronicles/memory-quality-without-an-llm-judge)
+<p align="center">
+  <b>Useful?</b> <a href="https://github.com/GreyforgeLabs/memory-quality-gate">Star memory-quality-gate on GitHub</a> · <a href="https://x.com/GreyforgeLabs">Follow @GreyforgeLabs</a> · <a href="https://greyforge.tech/open-source">More OpenForge tools at greyforge.tech</a>
+</p>
+
+<p align="center"><sub>Background: the <a href="https://greyforge.tech/chronicles/memory-quality-without-an-llm-judge">memory-quality-gate Chronicle</a> · <a href="https://greyforge.tech/llms.txt">Greyforge llms.txt</a></sub></p>
